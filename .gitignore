@@ -1,0 +1,10 @@
+# Build artifacts
+fprint-demo-gtk
+*.o
+*.a
+*.so
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
