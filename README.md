@@ -26,13 +26,20 @@ sudo apt install build-essential libgtk-3-dev libfprint-2-dev
 ```
 
 ## Compatibility
-* This project provides a GTK-based fingerprint image viewer  for libfprint 2.x 
-  to replace the `fprint-demo` tool that libfprint 1.x used to have.
-* This project is written for GTK 3 and built against `gtk+-3.0` (the 3.x series).
+* This project provides a GTK3-based fingerprint image viewer for libfprint 2.x,
+  to replace the `fprint-demo` tool that libfprint 1.x included.
 * This project was created against the library versions in Ubuntu 26.04:
   - `pkg-config --modversion gtk+-3.0` says: `3.24.52`
   - `pkg-config --modversion libfprint-2` says: `1.95.1+tod1`
+* The code may need adjusting if used against older or newer versions of libfprint.
 
+## Notes
+
+* The application expects a compatible libfprint-supported fingerprint reader to be available.
+* If the device is not accessible, it may suggest a udev rule to add to grant permissions.
+* This project was designed for two reasons:
+  - To explore what fingerprint images look like (why are they flaky for some people?)
+  - To get familiar with using AI for coding (in this case, GitHub Copilot in VS Code)
 
 ## Build
 
@@ -50,8 +57,9 @@ This builds the binary named `fprint-demo-gtk`.
 ./fprint-demo-gtk
 ```
 
-## Notes
+## License
 
-- The application expects a compatible libfprint-supported fingerprint reader to be available.
-- If the device is not accessible, it may suggest a udev rule to grant permission to the current user.
-- The project is designed for experimentation and development around raw fingerprint capture and inspection.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for the full text.
+
+Copyright (c) 2026 Dana Goyette.
+
