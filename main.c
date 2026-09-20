@@ -823,7 +823,7 @@ static void build_preview_area(AppData *app, GtkWidget *main_box) {
 
 static void build_main_window(AppData *app) {
     app->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(app->window), "libfprint Raw Image Capture");
+    gtk_window_set_title(GTK_WINDOW(app->window), "Fingerprint Capture Demo");
     gtk_window_set_default_size(GTK_WINDOW(app->window), 700, 540);
     gtk_window_set_position(GTK_WINDOW(app->window), GTK_WIN_POS_CENTER);
 

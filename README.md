@@ -57,6 +57,12 @@ This builds the binary named `fprint-demo-gtk`.
 ./fprint-demo-gtk
 ```
 
+## Screenshot
+
+Example capture from the application. The sample shown here was captured from a non-biometric surface for privacy and demonstration purposes.
+
+![Fingerprint preview](./screenshot-swipe.png)
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for the full text.
