@@ -11,6 +11,7 @@ typedef struct {
     GtkWidget *status_label;
     GtkWidget *preview_image;
     GtkWidget *preview_scroll;
+    GtkWidget *preview_zoom_buttons[4];
     GtkWidget *show_minutiae_check;
     GtkWidget *start_button;
     GtkWidget *stop_button;
@@ -20,6 +21,7 @@ typedef struct {
     gboolean capture_running;
     gboolean capture_highres;
     gboolean show_minutiae;
+    gdouble preview_zoom;
     FpImage *current_image;
     FpImage *pending_minutiae_image;
     gboolean minutiae_detection_running;
@@ -116,6 +118,40 @@ static GdkPixbuf *convert_fpimage_to_pixbuf(FpImage *image) {
                                     width * 3,
                                     free_pixels,
                                     NULL);
+}
+
+static GdkPixbuf *scale_preview_pixbuf(GdkPixbuf *pixbuf, gdouble zoom) {
+    const gint max_width = 1000;
+    const gint max_height = 600;
+    gint width = gdk_pixbuf_get_width(pixbuf);
+    gint height = gdk_pixbuf_get_height(pixbuf);
+    gdouble scale;
+
+    if (zoom > 0.0) {
+        scale = zoom;
+    } else {
+        scale = MIN((gdouble) max_width / width, (gdouble) max_height / height);
+    }
+
+    if (zoom == 0.0 && scale >= 1.0) {
+        return g_object_ref(pixbuf);
+    }
+
+    if (scale == 1.0) {
+        return g_object_ref(pixbuf);
+    }
+
+    if (scale > 0.0) {
+        return gdk_pixbuf_scale_simple(pixbuf,
+                                       MAX(1, (gint) (width * scale)),
+                                       MAX(1, (gint) (height * scale)),
+                                       GDK_INTERP_BILINEAR);
+    }
+
+    return gdk_pixbuf_scale_simple(pixbuf,
+                                   MAX(1, (gint) (width * scale)),
+                                   MAX(1, (gint) (height * scale)),
+                                   GDK_INTERP_BILINEAR);
 }
 
 static gboolean extract_vid_pid(const gchar *text, gchar **vendor, gchar **product) {
@@ -291,10 +327,12 @@ static void render_preview_from_image(AppData *app, FpImage *image) {
         }
     }
 
-    gtk_image_set_from_pixbuf(GTK_IMAGE(app->preview_image), pixbuf);
-    gtk_widget_set_size_request(app->preview_image, gdk_pixbuf_get_width(pixbuf), gdk_pixbuf_get_height(pixbuf));
-    gtk_scrolled_window_set_min_content_width(GTK_SCROLLED_WINDOW(app->preview_scroll), gdk_pixbuf_get_width(pixbuf));
-    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(app->preview_scroll), gdk_pixbuf_get_height(pixbuf));
+    GdkPixbuf *display_pixbuf = scale_preview_pixbuf(pixbuf, app->preview_zoom);
+    gtk_image_set_from_pixbuf(GTK_IMAGE(app->preview_image), display_pixbuf);
+    gtk_widget_set_size_request(app->preview_image,
+                                gdk_pixbuf_get_width(display_pixbuf),
+                                gdk_pixbuf_get_height(display_pixbuf));
+    g_object_unref(display_pixbuf);
     g_object_unref(pixbuf);
 }
 
@@ -329,7 +367,9 @@ static void minutiae_detected(GObject *source_object, GAsyncResult *result, gpoi
     GdkPixbuf *pixbuf = convert_fpimage_to_pixbuf(image);
     if (pixbuf && minutiae) {
         draw_minutiae_on_pixbuf(pixbuf, minutiae);
-        gtk_image_set_from_pixbuf(GTK_IMAGE(app->preview_image), pixbuf);
+        GdkPixbuf *display_pixbuf = scale_preview_pixbuf(pixbuf, app->preview_zoom);
+        gtk_image_set_from_pixbuf(GTK_IMAGE(app->preview_image), display_pixbuf);
+        g_object_unref(display_pixbuf);
     }
     if (pixbuf) {
         g_object_unref(pixbuf);
@@ -392,6 +432,27 @@ static gboolean poll_device_info(gpointer user_data) {
 static void on_show_minutiae_toggled(GtkToggleButton *button, gpointer user_data) {
     AppData *app = user_data;
     app->show_minutiae = gtk_toggle_button_get_active(button);
+    if (app->current_image) {
+        render_preview_from_image(app, app->current_image);
+    }
+}
+
+static void on_preview_zoom_changed(GtkToggleButton *button, gpointer user_data) {
+    AppData *app = user_data;
+    if (!gtk_toggle_button_get_active(button)) {
+        return;
+    }
+
+    for (guint i = 0; i < G_N_ELEMENTS(app->preview_zoom_buttons); i++) {
+        GtkWidget *zoom_button = app->preview_zoom_buttons[i];
+        if (zoom_button && GTK_WIDGET(zoom_button) != GTK_WIDGET(button)) {
+            gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(zoom_button), FALSE);
+        }
+    }
+
+    guint zoom_index = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(button), "preview-zoom-index"));
+    app->preview_zoom = zoom_index == 0 ? 0.0 : (gdouble) zoom_index;
+
     if (app->current_image) {
         render_preview_from_image(app, app->current_image);
     }
@@ -530,14 +591,6 @@ static void capture_complete(GObject *source_object, GAsyncResult *result, gpoin
     set_status(app, "Captured %ux%u raw fingerprint image.",
                pixbuf_width,
                pixbuf_height);
-
-    gint win_w, win_h;
-    gtk_window_get_size(GTK_WINDOW(app->window), &win_w, &win_h);
-    gint needed_w = pixbuf_width + 120;
-    gint needed_h = pixbuf_height + 180;
-    if (needed_w > win_w || needed_h > win_h) {
-        gtk_window_resize(GTK_WINDOW(app->window), MAX(win_w, needed_w), MAX(win_h, needed_h));
-    }
 
     g_object_unref(pixbuf);
     g_object_unref(image);
@@ -702,10 +755,6 @@ static void build_device_controls(AppData *app, GtkWidget *main_box) {
     g_signal_connect(refresh_button, "clicked", G_CALLBACK(on_refresh_clicked), app);
     gtk_box_pack_start(GTK_BOX(control_box), refresh_button, FALSE, FALSE, 0);
 
-    app->show_minutiae_check = gtk_check_button_new_with_label("Show minutiae");
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app->show_minutiae_check), FALSE);
-    g_signal_connect(app->show_minutiae_check, "toggled", G_CALLBACK(on_show_minutiae_toggled), app);
-    gtk_box_pack_start(GTK_BOX(control_box), app->show_minutiae_check, FALSE, FALSE, 0);
 }
 
 static void build_status_area(AppData *app, GtkWidget *main_box) {
@@ -726,11 +775,45 @@ static void build_preview_area(AppData *app, GtkWidget *main_box) {
     gtk_widget_set_vexpand(frame, TRUE);
     gtk_box_pack_start(GTK_BOX(main_box), frame, TRUE, TRUE, 0);
 
+    GtkWidget *preview_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_container_set_border_width(GTK_CONTAINER(preview_box), 6);
+    gtk_container_add(GTK_CONTAINER(frame), preview_box);
+
+    GtkWidget *zoom_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_halign(zoom_box, GTK_ALIGN_FILL);
+    gtk_widget_set_hexpand(zoom_box, TRUE);
+    gtk_box_pack_start(GTK_BOX(preview_box), zoom_box, FALSE, FALSE, 0);
+
+    GtkWidget *zoom_label = gtk_label_new("Preview zoom:");
+    gtk_box_pack_start(GTK_BOX(zoom_box), zoom_label, FALSE, FALSE, 6);
+
+    GtkWidget *zoom_button_group = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_style_context_add_class(gtk_widget_get_style_context(zoom_button_group), "linked");
+    gtk_widget_set_halign(zoom_button_group, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(zoom_box), zoom_button_group, FALSE, FALSE, 0);
+
+    const gchar *zoom_labels[] = { "Fit", "100%", "200%", "300%" };
+    for (guint i = 0; i < G_N_ELEMENTS(zoom_labels); i++) {
+        GtkWidget *button = gtk_toggle_button_new_with_label(zoom_labels[i]);
+        app->preview_zoom_buttons[i] = button;
+        g_object_set_data(G_OBJECT(button), "preview-zoom-index", GUINT_TO_POINTER(i));
+        g_signal_connect(button, "toggled", G_CALLBACK(on_preview_zoom_changed), app);
+        gtk_box_pack_start(GTK_BOX(zoom_button_group), button, FALSE, FALSE, 0);
+    }
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app->preview_zoom_buttons[0]), TRUE);
+
+    app->show_minutiae_check = gtk_check_button_new_with_label("Show minutiae");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app->show_minutiae_check), FALSE);
+    g_signal_connect(app->show_minutiae_check, "toggled", G_CALLBACK(on_show_minutiae_toggled), app);
+    gtk_box_pack_end(GTK_BOX(zoom_box), app->show_minutiae_check, FALSE, FALSE, 0);
+
     app->preview_scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(app->preview_scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(app->preview_scroll), FALSE);
+    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(app->preview_scroll), FALSE);
     gtk_widget_set_hexpand(app->preview_scroll, TRUE);
     gtk_widget_set_vexpand(app->preview_scroll, TRUE);
-    gtk_container_add(GTK_CONTAINER(frame), app->preview_scroll);
+    gtk_box_pack_start(GTK_BOX(preview_box), app->preview_scroll, TRUE, TRUE, 0);
 
     app->preview_image = gtk_image_new();
     gtk_widget_set_halign(app->preview_image, GTK_ALIGN_CENTER);
@@ -765,6 +848,7 @@ static void build_main_window(AppData *app) {
 static int initialize_app(AppData *app) {
     app->capture_running = FALSE;
     app->capture_highres = TRUE;
+    app->preview_zoom = 0.0;
     app->context = fp_context_new();
     if (!app->context) {
         g_printerr("Failed to initialize libfprint context.\n");
