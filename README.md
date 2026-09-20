@@ -38,8 +38,8 @@ sudo apt install build-essential libgtk-3-dev libfprint-2-dev
 * The application expects a compatible libfprint-supported fingerprint reader to be available.
 * If the device is not accessible, it may suggest a udev rule to add to grant permissions.
 * This project was designed for two reasons:
-  - To explore what fingerprint images look like (why are they flaky for some people?)
-  - To get familiar with using AI for coding (in this case, GitHub Copilot in VS Code)
+  - To investigate fingerprint-capture quality and factors affecting fingerprint reliability
+  - To gain practical experience with AI-assisted software development using GitHub Copilot
 
 ## Build
 
